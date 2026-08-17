@@ -1,0 +1,50 @@
+# Signing material and certificates
+*.jks
+*.keystore
+*.p12
+*.pem
+*.key
+*.p8
+*.mobileprovision
+id_rsa
+id_rsa.pub
+id_ed25519
+id_ed25519.pub
+
+# Environment files and local secrets
+*.env
+.env
+.env.*
+local.properties
+credentials.json
+secrets/
+*.secret
+
+# Firebase / Google / vendor config that may contain keys
+google-services.json
+GoogleService-Info.plist
+
+# Android and other binary packages — distribute through GitHub Releases only
+*.apk
+*.aab
+*.ipa
+*.zip
+*.tar
+*.tar.gz
+*.tgz
+*.7z
+
+# Logs and OS junk
+*.log
+.DS_Store
+Thumbs.db
+Desktop.ini
+
+# Editor and tooling
+.idea/
+.vscode/
+*.iml
+.gradle/
+build/
+dist/
+out/

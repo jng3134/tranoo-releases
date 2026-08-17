@@ -1,0 +1,86 @@
+name: Beta bug report
+description: Report a problem in a Tranoo Android beta build
+title: "[Beta] "
+labels:
+  - beta
+body:
+  - type: markdown
+    attributes:
+      value: |
+        Thanks for helping test Tranoo.
+
+        **Do not submit passwords, access tokens, personal documents, private conversations, payment details, or other sensitive information.**
+
+        Security vulnerabilities must be reported privately. See [SECURITY.md](../../SECURITY.md).
+  - type: input
+    id: tranoo_version
+    attributes:
+      label: Tranoo version
+      description: GitHub Release tag or in-app version (for example 1.0.0-beta.1).
+      placeholder: 1.0.0-beta.1
+    validations:
+      required: true
+  - type: input
+    id: android_version
+    attributes:
+      label: Android version
+      description: Settings → About phone (for example Android 14).
+      placeholder: Android 14
+    validations:
+      required: true
+  - type: input
+    id: device_model
+    attributes:
+      label: Device model
+      description: Manufacturer and model (for example Pixel 8 or Samsung Galaxy A54).
+      placeholder: Pixel 8
+    validations:
+      required: true
+  - type: textarea
+    id: description
+    attributes:
+      label: Description
+      description: What went wrong, in a few sentences.
+    validations:
+      required: true
+  - type: textarea
+    id: steps
+    attributes:
+      label: Steps to reproduce
+      description: Numbered steps someone else can follow.
+      placeholder: |
+        1.
+        2.
+        3.
+    validations:
+      required: true
+  - type: textarea
+    id: expected
+    attributes:
+      label: Expected behavior
+    validations:
+      required: true
+  - type: textarea
+    id: actual
+    attributes:
+      label: Actual behavior
+    validations:
+      required: true
+  - type: dropdown
+    id: reproducible
+    attributes:
+      label: Is the issue reproducible?
+      options:
+        - "Yes, every time"
+        - "Sometimes"
+        - "Only once"
+        - "Not sure"
+    validations:
+      required: true
+  - type: textarea
+    id: extras
+    attributes:
+      label: Screenshots or logs
+      description: Optional. Paste non-sensitive logs or describe screenshots. Redact emails, phone numbers, tokens, and message contents.
+    validations:
+      required: false

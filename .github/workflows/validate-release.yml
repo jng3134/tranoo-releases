@@ -1,0 +1,217 @@
+# Validate published GitHub Release assets for the public Tranoo beta.
+# This workflow does not build the Android app and must not use signing secrets.
+name: Validate release
+
+on:
+  release:
+    types: [published]
+  workflow_dispatch:
+    inputs:
+      tag:
+        description: Release tag to validate. Leave empty to use the most recently published release.
+        required: false
+        type: string
+
+permissions:
+  contents: write
+
+concurrency:
+  group: validate-release-${{ github.event.release.tag_name || inputs.tag || github.run_id }}
+  cancel-in-progress: false
+
+jobs:
+  validate-release:
+    name: Validate APK release assets
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    env:
+      CANONICAL_APK: tranoo-beta.apk
+      CHECKSUM_ASSET: tranoo-beta.apk.sha256
+    steps:
+      - name: Resolve release tag
+        id: release
+        env:
+          GH_TOKEN: ${{ github.token }}
+          EVENT_TAG: ${{ github.event.release.tag_name }}
+          INPUT_TAG: ${{ inputs.tag }}
+        run: |
+          set -euo pipefail
+          TAG="${EVENT_TAG:-}"
+          if [[ -z "$TAG" ]]; then
+            TAG="${INPUT_TAG:-}"
+          fi
+          TAG="${TAG#"${TAG%%[![:space:]]*}"}"
+          TAG="${TAG%"${TAG##*[![:space:]]}"}"
+          TAG="${TAG#refs/tags/}"
+          if [[ -z "$TAG" ]]; then
+            TAG="$(gh release list --repo "${GITHUB_REPOSITORY}" --exclude-drafts --limit 1 --json tagName --jq '.[0].tagName // empty')"
+          fi
+          if [[ -z "$TAG" ]]; then
+            echo "::error::No GitHub Release was found to validate."
+            exit 1
+          fi
+          echo "tag=${TAG}" >> "$GITHUB_OUTPUT"
+          echo "Validating release ${TAG}"
+
+      - name: Inspect assets and reject sensitive files
+        id: assets
+        env:
+          GH_TOKEN: ${{ github.token }}
+          TAG: ${{ steps.release.outputs.tag }}
+        run: |
+          set -euo pipefail
+          python3 - <<'PY'
+          import json, os, subprocess, sys
+
+          repo = os.environ["GITHUB_REPOSITORY"]
+          tag = os.environ["TAG"]
+          canonical = os.environ["CANONICAL_APK"]
+          checksum_name = os.environ["CHECKSUM_ASSET"]
+
+          raw = subprocess.check_output(
+              ["gh", "release", "view", tag, "--repo", repo, "--json", "assets,name,tagName,url,isPrerelease,isDraft"],
+              text=True,
+          )
+          data = json.loads(raw)
+          assets = data.get("assets") or []
+          names = [a.get("name") or "" for a in assets]
+
+          sensitive_suffixes = (
+              ".jks",
+              ".keystore",
+              ".p12",
+              ".pem",
+              ".key",
+              ".p8",
+              ".env",
+          )
+          sensitive_names = {
+              "google-services.json",
+              "googleservice-info.plist",
+              "local.properties",
+              ".env",
+          }
+
+          def is_sensitive(name: str) -> bool:
+              lower = name.lower()
+              if lower in sensitive_names:
+                  return True
+              if any(lower.endswith(suffix) for suffix in sensitive_suffixes):
+                  return True
+              if lower.endswith(".json") and "google-services" in lower:
+                  return True
+              return False
+
+          bad = [name for name in names if is_sensitive(name)]
+          if bad:
+              print("::error::Sensitive or secret-like files are attached to this release: " + ", ".join(bad))
+              sys.exit(1)
+
+          apks = [name for name in names if name.lower().endswith(".apk")]
+          if not apks:
+              print("::error::No .apk asset is attached to this release.")
+              sys.exit(1)
+
+          if canonical not in names:
+              print(
+                  f"::error::Canonical APK asset '{canonical}' is required. Found APK(s): "
+                  + ", ".join(apks)
+              )
+              sys.exit(1)
+
+          has_checksum = checksum_name in names
+          print(f"apk_count={len(apks)}")
+          print(f"has_checksum={str(has_checksum).lower()}")
+          with open(os.environ["GITHUB_OUTPUT"], "a", encoding="utf-8") as fh:
+              fh.write(f"has_checksum={str(has_checksum).lower()}\n")
+              fh.write(f"release_url={data.get('url') or ''}\n")
+              fh.write(f"release_title={data.get('name') or ''}\n")
+              fh.write(f"is_prerelease={str(bool(data.get('isPrerelease'))).lower()}\n")
+          PY
+
+      - name: Download canonical APK
+        env:
+          GH_TOKEN: ${{ github.token }}
+          TAG: ${{ steps.release.outputs.tag }}
+        run: |
+          set -euo pipefail
+          mkdir -p "${RUNNER_TEMP}/tranoo-release"
+          gh release download "${TAG}" \
+            --repo "${GITHUB_REPOSITORY}" \
+            --pattern "${CANONICAL_APK}" \
+            --dir "${RUNNER_TEMP}/tranoo-release"
+          test -s "${RUNNER_TEMP}/tranoo-release/${CANONICAL_APK}"
+
+      - name: Generate SHA-256
+        id: hash
+        run: |
+          set -euo pipefail
+          cd "${RUNNER_TEMP}/tranoo-release"
+          HASH="$(sha256sum "${CANONICAL_APK}" | awk '{print $1}')"
+          echo "${HASH}  ${CANONICAL_APK}" | tee "${CHECKSUM_ASSET}"
+          echo "sha256=${HASH}" >> "$GITHUB_OUTPUT"
+          echo "SHA-256 (${CANONICAL_APK}): ${HASH}"
+
+      - name: Verify existing checksum asset if present
+        if: steps.assets.outputs.has_checksum == 'true'
+        env:
+          GH_TOKEN: ${{ github.token }}
+          TAG: ${{ steps.release.outputs.tag }}
+          EXPECTED: ${{ steps.hash.outputs.sha256 }}
+        run: |
+          set -euo pipefail
+          mkdir -p "${RUNNER_TEMP}/tranoo-checksum"
+          gh release download "${TAG}" \
+            --repo "${GITHUB_REPOSITORY}" \
+            --pattern "${CHECKSUM_ASSET}" \
+            --dir "${RUNNER_TEMP}/tranoo-checksum"
+          PUBLISHED="$(tr -d '\r' < "${RUNNER_TEMP}/tranoo-checksum/${CHECKSUM_ASSET}" | awk '{print tolower($1)}')"
+          EXPECTED_LOWER="$(printf '%s' "${EXPECTED}" | tr '[:upper:]' '[:lower:]')"
+          if [[ "$PUBLISHED" != "$EXPECTED_LOWER" ]]; then
+            echo "::error::Published ${CHECKSUM_ASSET} does not match the downloaded APK."
+            echo "Published: ${PUBLISHED}"
+            echo "Computed:  ${EXPECTED_LOWER}"
+            exit 1
+          fi
+          echo "Published checksum matches the APK."
+
+      - name: Upload checksum asset if missing
+        if: steps.assets.outputs.has_checksum != 'true'
+        env:
+          GH_TOKEN: ${{ github.token }}
+          TAG: ${{ steps.release.outputs.tag }}
+        run: |
+          set -euo pipefail
+          gh release upload "${TAG}" \
+            "${RUNNER_TEMP}/tranoo-release/${CHECKSUM_ASSET}" \
+            --repo "${GITHUB_REPOSITORY}" \
+            --clobber
+          echo "Attached ${CHECKSUM_ASSET} to ${TAG}."
+
+      - name: Write job summary
+        if: always()
+        env:
+          TAG: ${{ steps.release.outputs.tag }}
+          SHA256: ${{ steps.hash.outputs.sha256 }}
+          RELEASE_URL: ${{ steps.assets.outputs.release_url }}
+          RELEASE_TITLE: ${{ steps.assets.outputs.release_title }}
+          IS_PRERELEASE: ${{ steps.assets.outputs.is_prerelease }}
+          HAS_CHECKSUM: ${{ steps.assets.outputs.has_checksum }}
+        run: |
+          {
+            echo "# Tranoo release validation"
+            echo
+            echo "| Field | Value |"
+            echo "| --- | --- |"
+            echo "| Repository | \`${GITHUB_REPOSITORY}\` |"
+            echo "| Tag | \`${TAG:-unknown}\` |"
+            echo "| Title | ${RELEASE_TITLE:-unknown} |"
+            echo "| Pre-release | \`${IS_PRERELEASE:-unknown}\` |"
+            echo "| Canonical APK | \`${CANONICAL_APK}\` |"
+            echo "| SHA-256 | \`${SHA256:-not-computed}\` |"
+            echo "| Checksum asset present before job | \`${HAS_CHECKSUM:-unknown}\` |"
+            echo "| Release | ${RELEASE_URL:-n/a} |"
+            echo "| Job result | \`${{ job.status }}\` |"
+            echo
+            echo "This job does not build or sign the Android app."
+          } >> "$GITHUB_STEP_SUMMARY"
