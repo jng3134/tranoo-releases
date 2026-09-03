@@ -6,6 +6,12 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 
 ## Unreleased
 
+## 1.0.0-beta.5
+
+- Localized notification and conversation screens (EN / FR / MG)
+- Stronger real-time messaging with WebSocket connectivity recovery and conversation sync
+- Document vault status line version label fix
+
 ## 1.0.0-beta.1
 
 - Initial public beta release
