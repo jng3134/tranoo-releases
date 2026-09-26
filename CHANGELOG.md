@@ -6,6 +6,14 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 
 ## Unreleased
 
+## v1.0.0-public-beta.2 (2026-09-26)
+
+- Android version: `1.0.0-beta.14` (`versionCode` `1000914`).
+- Clearer account creation feedback for existing or rejected email addresses and confirmation email limits.
+- Registration cooldown and duplicate-submission protection, with clearer sign-in and connection errors.
+- Confirmation email feedback after registration.
+- APK SHA-256: `ae701e268623772ccbb72edcb665431bbebba1e5979d8d063becb6ea70f9d25b`.
+
 ## 1.0.0-beta.11
 
 - Richer property details UI (viewing CTA, gallery fade, facts layout, sticky actions)
